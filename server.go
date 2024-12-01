@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	store "memcached/internal"
 	"net"
 )
 
@@ -25,10 +26,11 @@ type TCPServer interface {
 type MemcachedServer struct {
 	address string
 	port    int
+	store   store.Store
 }
 
-func NewMemcachedServer(address string, port int) (*MemcachedServer, error) {
-	return &MemcachedServer{address: address, port: port}, nil
+func NewMemcachedServer(address string, port int, store store.Store) (*MemcachedServer, error) {
+	return &MemcachedServer{address: address, port: port, store: store}, nil
 }
 
 func (m *MemcachedServer) Start(handler ConnectionHandler, w io.Writer) error {

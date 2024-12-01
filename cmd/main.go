@@ -17,6 +17,8 @@ func main() {
 	flag.IntVar(&port, "p", 11211, "server port")
 	flag.Parse()
 
+	// TODO - add store
+
 	server, err := memcached.NewMemcachedServer(address, port)
 
 	if err != nil {
