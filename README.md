@@ -8,7 +8,7 @@ A custom memcached server written in Go.
 
 Build the service:
 ```bash
-$ go build -o ccmemcached cmd/memcached/main.go
+$ go build -o ccmemcached cmd/main.go
 ```
 
 ### Run
@@ -25,11 +25,17 @@ You can specify a different address and port to use for running the server:
 $ ./ccmemcached -a 192.168.0.1 -p 11212
 ```
 
-
-## Run
+To test its functioning, you can leverage on `telnet`:
 
 ```bash
-
+$ telnet localhost 11211
+Trying ::1...
+Trying 127.0.0.1...
+Connected to localhost.
+Escape character is '^]'.
+set test1 0 0 4
+1234
+STORED
 ```
 
 ## Acknowledgement

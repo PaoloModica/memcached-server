@@ -1,17 +1,17 @@
-// ToDO - review test after store addition to MemcachedServer
 package memcached_test
 
 import (
-	"bytes"
+	"bufio"
+	"errors"
 	"fmt"
-	"log"
 	memcached "memcached"
+	store "memcached/internal"
 	"net"
 	"testing"
 	"time"
 )
 
-func dialConnection(t *testing.T, address string, message string, retry int) error {
+func dialConnection(t *testing.T, address string, message string, retry int) (net.Conn, error) {
 	t.Helper()
 
 	for i := 0; i < retry; i++ {
@@ -20,78 +20,138 @@ func dialConnection(t *testing.T, address string, message string, retry int) err
 			continue
 		}
 
-		defer conn.Close()
-
+		time.Sleep(200 * time.Millisecond)
 		n, err := conn.Write([]byte(message))
 
 		if err != nil || n == 0 {
-			return err
+			return nil, err
+		} else {
+			return conn, nil
 		}
-		time.Sleep(100 * time.Millisecond)
 	}
-	return nil
+	return nil, errors.New("failed dialing connection")
 }
 
 func TestServer(t *testing.T) {
 	testServerAddress := "127.0.0.1"
 	testServerPort := 11212
-	receivedDataChan := make(chan []byte)
-	stubConnectionHandler, _ := memcached.NewStubConnectionHandler(receivedDataChan)
-	server, _ := memcached.NewMemcachedServer(testServerAddress, testServerPort)
+	stubStore := store.NewInMemoryStore()
+	stubStore.Add("test", []byte("1234"), 0)
+	server, _ := memcached.NewMemcachedServer(testServerAddress, testServerPort, stubStore)
 	serverAddress := fmt.Sprintf("%s:%d", testServerAddress, testServerPort)
-	buf := bytes.Buffer{}
 
-	go server.Start(stubConnectionHandler, &buf)
+	go server.Start()
+	time.Sleep(100 * time.Millisecond)
 
 	t.Run("server accept incoming request", func(t *testing.T) {
-		messageData := "test data"
+		messageData := "hello world\n"
+		expectedData := "hello command not recognised"
 
 		// dial a connection to the server to send data
-		go dialConnection(t, serverAddress, messageData, 5)
+		conn, err := dialConnection(t, serverAddress, messageData, 5)
 
-		select {
-		case receivedData := <-receivedDataChan:
-			log.Printf("received message: %s", receivedData)
-			if string(receivedData) != messageData {
-				t.Errorf("expected to receive %s, got %s", messageData, receivedData)
+		if err != nil {
+			t.Errorf("expected connection to get established, got error %s", err.Error())
+		}
+
+		defer conn.Close()
+
+		connectionScanner := bufio.NewScanner(bufio.NewReader(conn))
+
+		var receivedData string
+		expectedReceivedDataLines := 1
+		i := 0
+		fmt.Print("scanning for data to be received back")
+		for connectionScanner.Scan() {
+
+			receivedData += connectionScanner.Text()
+
+			if len(receivedData) > 0 {
+				i += 1
 			}
-		case <-time.After(30 * time.Second):
-			t.Fatalf("TCP server test time out")
+
+			if i == expectedReceivedDataLines {
+				break
+			}
+		}
+
+		if receivedData != expectedData {
+			t.Errorf("expected to receive %s, got %s", expectedData, receivedData)
 		}
 	})
 	t.Run("GET command returns key", func(t *testing.T) {
 		command := "get test\r\n"
-		expectedData := "VALUE test 1 1"
+		expectedData := "VALUE test 0 4\r\n1234\r\nEND\r\n"
 
 		// dial a connection to the server to send data
-		go dialConnection(t, serverAddress, command, 5)
+		conn, err := dialConnection(t, serverAddress, command, 5)
 
-		select {
-		case receivedData := <-receivedDataChan:
-			log.Printf("received message: %s", receivedData)
-			if string(receivedData) != expectedData {
-				t.Errorf("expected to receive %s, got %s", expectedData, receivedData)
+		if err != nil {
+			t.Errorf("expected connection to get established, got error %s", err.Error())
+		}
+
+		defer conn.Close()
+
+		connectionScanner := bufio.NewScanner(bufio.NewReader(conn))
+
+		var receivedData string
+		expectedReceivedDataLines := 3
+		i := 0
+		fmt.Print("scanning for data to be received back")
+		for connectionScanner.Scan() {
+
+			receivedData += connectionScanner.Text()
+
+			if len(receivedData) > 0 {
+				i += 1
+				receivedData += "\r\n"
 			}
-		case <-time.After(30 * time.Second):
-			t.Fatalf("TCP server test time out")
+
+			if i == expectedReceivedDataLines {
+				break
+			}
+		}
+
+		if receivedData != expectedData {
+			t.Errorf("expected to receive %s, got %s", expectedData, receivedData)
 		}
 	})
 
 	t.Run("SET command stores new key value pair", func(t *testing.T) {
-		command := "set test 0 0 4\r\n1234\r\n"
-		expectedData := "STORED"
+		command := "set test2 0 0 4\r\n9876\r\n"
+		expectedData := "STORED\r\n"
 
 		// dial a connection to the server to send data
-		go dialConnection(t, serverAddress, command, 5)
+		conn, err := dialConnection(t, serverAddress, command, 5)
 
-		select {
-		case receivedData := <-receivedDataChan:
-			log.Printf("received message: %s", receivedData)
-			if string(receivedData) != expectedData {
-				t.Errorf("expected to receive %s, got %s", expectedData, receivedData)
+		if err != nil {
+			t.Errorf("expected connection to get established, got error %s", err.Error())
+		}
+
+		defer conn.Close()
+
+		connectionScanner := bufio.NewScanner(bufio.NewReader(conn))
+
+		var receivedData string
+		expectedReceivedDataLines := 1
+		i := 0
+		fmt.Print("scanning for data to be received back")
+		for connectionScanner.Scan() {
+
+			receivedData += connectionScanner.Text()
+
+			if len(receivedData) > 0 {
+				i += 1
+				receivedData += "\r\n"
 			}
-		case <-time.After(30 * time.Second):
-			t.Fatalf("TCP server test time out")
+
+			if i == expectedReceivedDataLines {
+				break
+			}
+		}
+
+		if receivedData != expectedData {
+			t.Errorf("expected to receive %s, got %s", expectedData, receivedData)
 		}
 	})
 }

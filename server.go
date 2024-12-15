@@ -1,26 +1,24 @@
 package memcached
 
 import (
-	"bytes"
+	"bufio"
 	"fmt"
 	"io"
 	"log"
 	store "memcached/internal"
 	"net"
+	"strconv"
+	"strings"
 )
 
-type ConnectionHandler interface {
-	Handle(conn net.Conn, w io.Writer) error
-}
+type CommandNotValidError string
 
-type ConnectionHandlerFunc func(net.Conn, io.Writer) error
-
-func (c ConnectionHandlerFunc) Handle(conn net.Conn, w io.Writer) error {
-	return c(conn, w)
+func (e CommandNotValidError) Error() string {
+	return string(e)
 }
 
 type TCPServer interface {
-	Start(handler ConnectionHandler) error
+	Start(w io.Writer) error
 }
 
 type MemcachedServer struct {
@@ -33,7 +31,61 @@ func NewMemcachedServer(address string, port int, store store.Store) (*Memcached
 	return &MemcachedServer{address: address, port: port, store: store}, nil
 }
 
-func (m *MemcachedServer) Start(handler ConnectionHandler, w io.Writer) error {
+func (m *MemcachedServer) handleConnection(conn net.Conn) {
+	log.Printf("Managing connection %v", conn.RemoteAddr())
+	defer conn.Close()
+
+	scanner := bufio.NewScanner(bufio.NewReader(conn))
+
+	var command string
+	var keyToAdd string
+	var keyEntry store.MapEntry
+
+	for scanner.Scan() {
+		command = scanner.Text()
+
+		cmdComponents := strings.Split(command, " ")
+
+		log.Printf("Command components: %v", cmdComponents)
+
+		if len(cmdComponents) < 1 {
+			log.Print("not enough arguments for the command")
+			continue
+		}
+
+		switch cmdComponents[0] {
+		case "set":
+			log.Println("Processing SET command")
+			keyToAdd = cmdComponents[1]
+			flags, _ := strconv.Atoi(cmdComponents[2])
+
+			keyEntry = store.MapEntry{Flags: uint16(flags)}
+		case "get":
+			log.Println("Processing GET command")
+			keyVal, err := m.store.Get(cmdComponents[1])
+			if err != nil {
+				conn.Write([]byte(err.Error()))
+				continue
+			}
+			output := fmt.Sprintf("VALUE %s %d %d\r\n%s\r\nEND\r\n", cmdComponents[1], keyVal.Flags, len(keyVal.Data), string(keyVal.Data))
+			conn.Write([]byte(output))
+		default:
+			if keyToAdd != "" {
+				log.Printf("Store %s in key %s", cmdComponents[0], keyToAdd)
+				m.store.Add(keyToAdd, []byte(cmdComponents[0]), keyEntry.Flags)
+				conn.Write([]byte("STORED\r\n"))
+				// reset keyToAdd and keyEntry
+				keyToAdd = ""
+				keyEntry = store.MapEntry{}
+			} else {
+				log.Print("Command not recognised")
+				conn.Write([]byte(fmt.Sprintf("%s command not recognised\r\n", cmdComponents[0])))
+			}
+		}
+	}
+}
+
+func (m *MemcachedServer) Start() error {
 	log.Printf("starting server on %s:%d", m.address, m.port)
 
 	networkAddress := fmt.Sprintf("%s:%d", m.address, m.port)
@@ -51,48 +103,6 @@ func (m *MemcachedServer) Start(handler ConnectionHandler, w io.Writer) error {
 			log.Fatalf("an error occurred while setting up Memcached server: %s", err)
 			return err
 		}
-		go handler.Handle(conn, w)
+		go m.handleConnection(conn)
 	}
-}
-
-func SimpleHandlerFunc(conn net.Conn, w io.Writer) error {
-	defer conn.Close()
-	n, err := io.Copy(w, conn)
-
-	if err != nil {
-		if err != io.EOF {
-			log.Fatalf("an error occurred while reading data: %s", err)
-			return err
-		}
-	}
-
-	log.Printf("%d bytes received", n)
-	log.Printf("connection to %v closed.\n", conn.RemoteAddr().String())
-	return nil
-}
-
-type StubConnectionHandler struct {
-	receivedDataChan chan []byte
-}
-
-func NewStubConnectionHandler(r chan []byte) (*StubConnectionHandler, error) {
-	return &StubConnectionHandler{receivedDataChan: r}, nil
-}
-
-func (s *StubConnectionHandler) Handle(conn net.Conn, w io.Writer) error {
-	defer conn.Close()
-	var buf bytes.Buffer
-	_, err := io.Copy(&buf, conn)
-
-	if err != nil {
-		if err != io.EOF {
-			log.Fatalf("an error occurred while reading data: %s", err)
-			return err
-		}
-	}
-
-	// send received data over channel
-	s.receivedDataChan <- buf.Bytes()
-
-	return nil
 }

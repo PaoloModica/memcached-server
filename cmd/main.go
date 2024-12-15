@@ -1,11 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"flag"
 	"log"
 	memcached "memcached"
-	"os"
+	store "memcached/internal"
 )
 
 func main() {
@@ -17,16 +16,13 @@ func main() {
 	flag.IntVar(&port, "p", 11211, "server port")
 	flag.Parse()
 
-	// TODO - add store
+	store := store.NewInMemoryStore()
 
-	server, err := memcached.NewMemcachedServer(address, port)
+	server, err := memcached.NewMemcachedServer(address, port, store)
 
 	if err != nil {
 		log.Fatalf("an error occurred while setting up memcached server: %s", err)
 	}
 
-	connectionHandler := memcached.ConnectionHandlerFunc(memcached.SimpleHandlerFunc)
-	out := bufio.NewWriter(os.Stdout)
-
-	go server.Start(connectionHandler, out)
+	server.Start()
 }
