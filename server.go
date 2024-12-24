@@ -55,14 +55,23 @@ func (m *MemcachedServer) handleConnection(conn net.Conn) {
 		}
 
 		switch cmdComponents[0] {
-		case "set":
-			log.Println("processing SET command")
+		case "add":
+			log.Println("processing ADD command")
 			keyToAdd = cmdComponents[1]
-			flags, _ := strconv.Atoi(cmdComponents[2])
-			expiration, _ := strconv.Atoi(cmdComponents[3])
-			noReply = cmdComponents[5]
 
-			keyEntry = store.MapEntry{Flags: uint16(flags), Expiration: time.Duration(expiration)}
+			// check whether the key already exists in store
+			keyVal, err := m.store.Get(keyToAdd)
+			if keyVal == nil && err != nil {
+				flags, _ := strconv.Atoi(cmdComponents[2])
+				expiration, _ := strconv.Atoi(cmdComponents[3])
+				noReply = cmdComponents[5]
+
+				keyEntry = store.MapEntry{Flags: uint16(flags), Expiration: time.Duration(expiration)}
+			} else {
+				log.Printf("value already existing for key %s, nothing to add", keyToAdd)
+				conn.Write([]byte("NOT_STORED\r\n"))
+				keyToAdd = ""
+			}
 		case "get":
 			log.Println("processing GET command")
 			keyVal, err := m.store.Get(cmdComponents[1])
@@ -79,6 +88,31 @@ func (m *MemcachedServer) handleConnection(conn net.Conn) {
 				output = "END\r\n"
 			}
 			conn.Write([]byte(output))
+		case "replace":
+			log.Println("processing REPLACE command")
+			keyToAdd = cmdComponents[1]
+
+			// check whether the key already exists in store
+			keyVal, err := m.store.Get(keyToAdd)
+			if keyVal == nil && err != nil {
+				log.Printf("no value found for key %s, nothing to replace", keyToAdd)
+				conn.Write([]byte("NOT_STORED\r\n"))
+				keyToAdd = ""
+			} else {
+				flags, _ := strconv.Atoi(cmdComponents[2])
+				expiration, _ := strconv.Atoi(cmdComponents[3])
+				noReply = cmdComponents[5]
+
+				keyEntry = store.MapEntry{Flags: uint16(flags), Expiration: time.Duration(expiration)}
+			}
+		case "set":
+			log.Println("processing SET command")
+			keyToAdd = cmdComponents[1]
+			flags, _ := strconv.Atoi(cmdComponents[2])
+			expiration, _ := strconv.Atoi(cmdComponents[3])
+			noReply = cmdComponents[5]
+
+			keyEntry = store.MapEntry{Flags: uint16(flags), Expiration: time.Duration(expiration)}
 		default:
 			if keyToAdd != "" {
 				log.Printf("store %s in key %s", cmdComponents[0], keyToAdd)

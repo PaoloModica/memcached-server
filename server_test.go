@@ -39,6 +39,36 @@ func dialConnection(t *testing.T, address string, message string, retry int) (ne
 	return nil, errors.New("failed dialing connection")
 }
 
+func dialConnectionAndCheckReceivedData(t *testing.T, addr string, tc testCase) (receivedData string) {
+	t.Helper()
+	// dial a connection to the server to send data
+	conn, err := dialConnection(t, addr, tc.Command, 5)
+
+	if err != nil {
+		t.Errorf("expected connection to get established, got error %s", err.Error())
+	}
+
+	defer conn.Close()
+
+	connectionScanner := bufio.NewScanner(bufio.NewReader(conn))
+
+	expectedReceivedDataLines := strings.Count(tc.ExpectedResult, "\r\n")
+	i := 0
+	for connectionScanner.Scan() {
+		receivedData += connectionScanner.Text()
+
+		if len(receivedData) > 0 {
+			i += 1
+			receivedData += "\r\n"
+		}
+
+		if i == expectedReceivedDataLines {
+			break
+		}
+	}
+	return
+}
+
 func TestServer(t *testing.T) {
 	testServerAddress := "127.0.0.1"
 	testServerPort := 11212
@@ -108,33 +138,7 @@ func TestServer(t *testing.T) {
 
 		for _, tc := range getCmdTestCases {
 			t.Run(tc.Id, func(t *testing.T) {
-				// dial a connection to the server to send data
-				conn, err := dialConnection(t, serverAddress, tc.Command, 5)
-
-				if err != nil {
-					t.Errorf("expected connection to get established, got error %s", err.Error())
-				}
-
-				defer conn.Close()
-
-				connectionScanner := bufio.NewScanner(bufio.NewReader(conn))
-
-				var receivedData string
-				expectedReceivedDataLines := strings.Count(tc.ExpectedResult, "\r\n")
-				i := 0
-				for connectionScanner.Scan() {
-
-					receivedData += connectionScanner.Text()
-
-					if len(receivedData) > 0 {
-						i += 1
-						receivedData += "\r\n"
-					}
-
-					if i == expectedReceivedDataLines {
-						break
-					}
-				}
+				receivedData := dialConnectionAndCheckReceivedData(t, serverAddress, tc)
 
 				if receivedData != tc.ExpectedResult {
 					t.Errorf("expected to receive %s, got %s", tc.ExpectedResult, receivedData)
@@ -158,32 +162,65 @@ func TestServer(t *testing.T) {
 
 		for _, tc := range setCmdTestCases {
 			t.Run(tc.Id, func(t *testing.T) {
-				// dial a connection to the server to send data
-				conn, err := dialConnection(t, serverAddress, tc.Command, 5)
+				receivedData := dialConnectionAndCheckReceivedData(t, serverAddress, tc)
 
-				if err != nil {
-					t.Errorf("expected connection to get established, got error %s", err.Error())
+				if receivedData != tc.ExpectedResult {
+					t.Errorf("expected to receive %s, got %s", tc.ExpectedResult, receivedData)
 				}
+			})
+		}
+	})
+	t.Run("ADD command tests", func(t *testing.T) {
+		addCmdTestCases := []testCase{
+			{
+				Id:             "add existing key, return not stored",
+				Command:        "add test3 0 1 4\r\n9876\r\n",
+				ExpectedResult: "NOT_STORED\r\n",
+			},
+			{
+				Id:             "add new key pair, return stored",
+				Command:        "add test5 0 1 4\r\n09182736\r\n",
+				ExpectedResult: "STORED\r\n",
+			},
+			{
+				Id:             "add new key pair, no reply, return nothing",
+				Command:        "add test6 0 1 4 noreply\r\n09182736\r\n",
+				ExpectedResult: "",
+			},
+		}
 
-				defer conn.Close()
+		for _, tc := range addCmdTestCases {
+			t.Run(tc.Id, func(t *testing.T) {
+				receivedData := dialConnectionAndCheckReceivedData(t, serverAddress, tc)
 
-				connectionScanner := bufio.NewScanner(bufio.NewReader(conn))
-
-				var receivedData string
-				expectedReceivedDataLines := strings.Count(tc.ExpectedResult, "\r\n")
-				i := 0
-				for connectionScanner.Scan() {
-					receivedData += connectionScanner.Text()
-
-					if len(receivedData) > 0 {
-						i += 1
-						receivedData += "\r\n"
-					}
-
-					if i == expectedReceivedDataLines {
-						break
-					}
+				if receivedData != tc.ExpectedResult {
+					t.Errorf("expected to receive %s, got %s", tc.ExpectedResult, receivedData)
 				}
+			})
+		}
+	})
+	t.Run("REPLACE command tests", func(t *testing.T) {
+		replaceCmdTestCases := []testCase{
+			{
+				Id:             "replace unknown key content, return not stored",
+				Command:        "replace test99 0 1 4\r\n9876\r\n",
+				ExpectedResult: "NOT_STORED\r\n",
+			},
+			{
+				Id:             "replace existing key content, return stored",
+				Command:        "replace test3 0 1 4\r\n54321\r\n",
+				ExpectedResult: "STORED\r\n",
+			},
+			{
+				Id:             "replace existing key content noreply, return nothing",
+				Command:        "replace test3 0 1 4 noreply\r\012938\r\n",
+				ExpectedResult: "",
+			},
+		}
+
+		for _, tc := range replaceCmdTestCases {
+			t.Run(tc.Id, func(t *testing.T) {
+				receivedData := dialConnectionAndCheckReceivedData(t, serverAddress, tc)
 
 				if receivedData != tc.ExpectedResult {
 					t.Errorf("expected to receive %s, got %s", tc.ExpectedResult, receivedData)
