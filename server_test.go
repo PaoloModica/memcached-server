@@ -116,7 +116,6 @@ func TestServer(t *testing.T) {
 			t.Errorf("expected to receive %s, got %s", expectedData, receivedData)
 		}
 	})
-
 	t.Run("SET command stores new key value pair", func(t *testing.T) {
 		command := "set test2 0 0 4\r\n9876\r\n"
 		expectedData := "STORED\r\n"
@@ -137,7 +136,42 @@ func TestServer(t *testing.T) {
 		i := 0
 		fmt.Print("scanning for data to be received back")
 		for connectionScanner.Scan() {
+			receivedData += connectionScanner.Text()
 
+			if len(receivedData) > 0 {
+				i += 1
+				receivedData += "\r\n"
+			}
+
+			if i == expectedReceivedDataLines {
+				break
+			}
+		}
+
+		if receivedData != expectedData {
+			t.Errorf("expected to receive %s, got %s", expectedData, receivedData)
+		}
+	})
+	t.Run("SET command with no reply stores new key value pair, returns no response", func(t *testing.T) {
+		command := "set test3 0 0 4 noreply\r\n09182736\r\n"
+		expectedData := ""
+
+		// dial a connection to the server to send data
+		conn, err := dialConnection(t, serverAddress, command, 5)
+
+		if err != nil {
+			t.Errorf("expected connection to get established, got error %s", err.Error())
+		}
+
+		defer conn.Close()
+
+		connectionScanner := bufio.NewScanner(bufio.NewReader(conn))
+
+		var receivedData string
+		expectedReceivedDataLines := 0
+		i := 0
+
+		for connectionScanner.Scan() {
 			receivedData += connectionScanner.Text()
 
 			if len(receivedData) > 0 {

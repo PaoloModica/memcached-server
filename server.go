@@ -38,15 +38,15 @@ func (m *MemcachedServer) handleConnection(conn net.Conn) {
 	scanner := bufio.NewScanner(bufio.NewReader(conn))
 
 	var command string
+	var cmdComponents [6]string
 	var keyToAdd string
+	var noReply string
 	var keyEntry store.MapEntry
 
 	for scanner.Scan() {
 		command = scanner.Text()
-
-		cmdComponents := strings.Split(command, " ")
-
-		log.Printf("Command components: %v", cmdComponents)
+		components := strings.Split(command, " ")
+		copy(cmdComponents[:], components)
 
 		if len(cmdComponents) < 1 {
 			log.Print("not enough arguments for the command")
@@ -58,6 +58,7 @@ func (m *MemcachedServer) handleConnection(conn net.Conn) {
 			log.Println("Processing SET command")
 			keyToAdd = cmdComponents[1]
 			flags, _ := strconv.Atoi(cmdComponents[2])
+			noReply = cmdComponents[5]
 
 			keyEntry = store.MapEntry{Flags: uint16(flags)}
 		case "get":
@@ -67,15 +68,22 @@ func (m *MemcachedServer) handleConnection(conn net.Conn) {
 				conn.Write([]byte(err.Error()))
 				continue
 			}
-			output := fmt.Sprintf("VALUE %s %d %d\r\n%s\r\nEND\r\n", cmdComponents[1], keyVal.Flags, len(keyVal.Data), string(keyVal.Data))
-			conn.Write([]byte(output))
+			if cmdComponents[5] == "" {
+				output := fmt.Sprintf("VALUE %s %d %d\r\n%s\r\nEND\r\n", cmdComponents[1], keyVal.Flags, len(keyVal.Data), string(keyVal.Data))
+				conn.Write([]byte(output))
+			}
 		default:
 			if keyToAdd != "" {
 				log.Printf("Store %s in key %s", cmdComponents[0], keyToAdd)
 				m.store.Add(keyToAdd, []byte(cmdComponents[0]), keyEntry.Flags)
-				conn.Write([]byte("STORED\r\n"))
+				if noReply == "" {
+					conn.Write([]byte("STORED\r\n"))
+				} else {
+					conn.Write([]byte("\r\n"))
+				}
 				// reset keyToAdd and keyEntry
 				keyToAdd = ""
+				noReply = ""
 				keyEntry = store.MapEntry{}
 			} else {
 				log.Print("Command not recognised")
