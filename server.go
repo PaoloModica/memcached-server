@@ -9,6 +9,7 @@ import (
 	"net"
 	"strconv"
 	"strings"
+	"time"
 )
 
 type CommandNotValidError string
@@ -32,7 +33,7 @@ func NewMemcachedServer(address string, port int, store store.Store) (*Memcached
 }
 
 func (m *MemcachedServer) handleConnection(conn net.Conn) {
-	log.Printf("Managing connection %v", conn.RemoteAddr())
+	log.Printf("managing connection %v", conn.RemoteAddr())
 	defer conn.Close()
 
 	scanner := bufio.NewScanner(bufio.NewReader(conn))
@@ -55,27 +56,33 @@ func (m *MemcachedServer) handleConnection(conn net.Conn) {
 
 		switch cmdComponents[0] {
 		case "set":
-			log.Println("Processing SET command")
+			log.Println("processing SET command")
 			keyToAdd = cmdComponents[1]
 			flags, _ := strconv.Atoi(cmdComponents[2])
+			expiration, _ := strconv.Atoi(cmdComponents[3])
 			noReply = cmdComponents[5]
 
-			keyEntry = store.MapEntry{Flags: uint16(flags)}
+			keyEntry = store.MapEntry{Flags: uint16(flags), Expiration: time.Duration(expiration)}
 		case "get":
-			log.Println("Processing GET command")
+			log.Println("processing GET command")
 			keyVal, err := m.store.Get(cmdComponents[1])
 			if err != nil {
-				conn.Write([]byte(err.Error()))
+				log.Printf("an error occurred while fetching key from store: %s", err.Error())
+				conn.Write([]byte("END\r\n"))
 				continue
 			}
-			if cmdComponents[5] == "" {
-				output := fmt.Sprintf("VALUE %s %d %d\r\n%s\r\nEND\r\n", cmdComponents[1], keyVal.Flags, len(keyVal.Data), string(keyVal.Data))
-				conn.Write([]byte(output))
+			var output string
+			if !keyVal.IsExpired() {
+				output = fmt.Sprintf("VALUE %s %d %d\r\n%s\r\nEND\r\n", cmdComponents[1], keyVal.Flags, len(keyVal.Data), string(keyVal.Data))
+			} else {
+				m.store.Remove(cmdComponents[1])
+				output = "END\r\n"
 			}
+			conn.Write([]byte(output))
 		default:
 			if keyToAdd != "" {
-				log.Printf("Store %s in key %s", cmdComponents[0], keyToAdd)
-				m.store.Add(keyToAdd, []byte(cmdComponents[0]), keyEntry.Flags)
+				log.Printf("store %s in key %s", cmdComponents[0], keyToAdd)
+				m.store.Add(keyToAdd, []byte(cmdComponents[0]), keyEntry.Flags, keyEntry.Expiration)
 				if noReply == "" {
 					conn.Write([]byte("STORED\r\n"))
 				} else {
@@ -86,7 +93,7 @@ func (m *MemcachedServer) handleConnection(conn net.Conn) {
 				noReply = ""
 				keyEntry = store.MapEntry{}
 			} else {
-				log.Print("Command not recognised")
+				log.Print("command not recognised")
 				conn.Write([]byte(fmt.Sprintf("%s command not recognised\r\n", cmdComponents[0])))
 			}
 		}
