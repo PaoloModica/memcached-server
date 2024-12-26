@@ -12,7 +12,7 @@ func TestStore(t *testing.T) {
 		data := []byte("some piece of data")
 		var flags uint16 = 1
 
-		err := store.Add(key, data, flags)
+		err := store.Add(key, data, flags, 0)
 
 		if err != nil {
 			t.Errorf("an error occurred while storing data: %s", err)

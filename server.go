@@ -72,6 +72,23 @@ func (m *MemcachedServer) handleConnection(conn net.Conn) {
 				conn.Write([]byte("NOT_STORED\r\n"))
 				keyToAdd = ""
 			}
+		case "append":
+			log.Println("processing APPEND command")
+			keyToAdd = cmdComponents[1]
+
+			// check whether the key already exists in store
+			keyVal, err := m.store.Get(keyToAdd)
+			if keyVal == nil && err != nil {
+				log.Printf("no value found for key %s, nothing to append", keyToAdd)
+				conn.Write([]byte("NOT_STORED\r\n"))
+				keyToAdd = ""
+			} else {
+				flags, _ := strconv.Atoi(cmdComponents[2])
+				expiration, _ := strconv.Atoi(cmdComponents[3])
+				noReply = cmdComponents[5]
+				data := append(keyVal.Data, []byte("%S")...)
+				keyEntry = store.MapEntry{Flags: uint16(flags), Expiration: time.Duration(expiration), Data: data}
+			}
 		case "get":
 			log.Println("processing GET command")
 			keyVal, err := m.store.Get(cmdComponents[1])
@@ -88,6 +105,23 @@ func (m *MemcachedServer) handleConnection(conn net.Conn) {
 				output = "END\r\n"
 			}
 			conn.Write([]byte(output))
+		case "prepend":
+			log.Println("processing PREPEND command")
+			keyToAdd = cmdComponents[1]
+
+			// check whether the key already exists in store
+			keyVal, err := m.store.Get(keyToAdd)
+			if keyVal == nil && err != nil {
+				log.Printf("no value found for key %s, nothing to prepend", keyToAdd)
+				conn.Write([]byte("NOT_STORED\r\n"))
+				keyToAdd = ""
+			} else {
+				flags, _ := strconv.Atoi(cmdComponents[2])
+				expiration, _ := strconv.Atoi(cmdComponents[3])
+				noReply = cmdComponents[5]
+				data := append([]byte("%S"), keyVal.Data...)
+				keyEntry = store.MapEntry{Flags: uint16(flags), Expiration: time.Duration(expiration), Data: data}
+			}
 		case "replace":
 			log.Println("processing REPLACE command")
 			keyToAdd = cmdComponents[1]
@@ -116,7 +150,13 @@ func (m *MemcachedServer) handleConnection(conn net.Conn) {
 		default:
 			if keyToAdd != "" {
 				log.Printf("store %s in key %s", cmdComponents[0], keyToAdd)
-				m.store.Add(keyToAdd, []byte(cmdComponents[0]), keyEntry.Flags, keyEntry.Expiration)
+				var d []byte
+				if keyEntry.Data != nil {
+					d = []byte(strings.Replace(string(keyEntry.Data), "%S", cmdComponents[0], 1))
+				} else {
+					d = []byte(cmdComponents[0])
+				}
+				m.store.Add(keyToAdd, d, keyEntry.Flags, keyEntry.Expiration)
 				if noReply == "" {
 					conn.Write([]byte("STORED\r\n"))
 				} else {

@@ -18,6 +18,11 @@ type testCase struct {
 	ExpectedResult string
 }
 
+type appendPrependTestCase struct {
+	testCase
+	ExpectedKeyVal string
+}
+
 func dialConnection(t *testing.T, address string, message string, retry int) (net.Conn, error) {
 	t.Helper()
 
@@ -67,6 +72,15 @@ func dialConnectionAndCheckReceivedData(t *testing.T, addr string, tc testCase) 
 		}
 	}
 	return
+}
+
+func assertKeyContent(t *testing.T, store store.Store, key string, exp string) {
+	t.Helper()
+
+	keyVal, _ := store.Get(key)
+	if string(keyVal.Data) != exp {
+		t.Errorf("expected key %s to feature %s content, found %s", key, exp, string(keyVal.Data))
+	}
 }
 
 func TestServer(t *testing.T) {
@@ -225,6 +239,96 @@ func TestServer(t *testing.T) {
 				if receivedData != tc.ExpectedResult {
 					t.Errorf("expected to receive %s, got %s", tc.ExpectedResult, receivedData)
 				}
+			})
+		}
+	})
+	t.Run("APPEND command tests", func(t *testing.T) {
+		appendCmdTestCases := []appendPrependTestCase{
+			{
+				testCase: testCase{
+					Id:             "append data to unknown key content, return not stored",
+					Command:        "append test99 0 1 4\r\n9876\r\n",
+					ExpectedResult: "NOT_STORED\r\n",
+				},
+				ExpectedKeyVal: "",
+			},
+			{
+				testCase: testCase{
+					Id:             "append data to existing key content, return stored",
+					Command:        "append test1 0 1 4\r\nmore\r\n",
+					ExpectedResult: "STORED\r\n",
+				},
+				ExpectedKeyVal: "1234more",
+			},
+			{
+				testCase: testCase{
+					Id:             "append data to existing key content noreply, return nothing",
+					Command:        "append test1 0 1 4 noreply\r\nmore\r\n",
+					ExpectedResult: "",
+				},
+				ExpectedKeyVal: "1234moremore",
+			},
+		}
+
+		for _, tc := range appendCmdTestCases {
+			t.Run(tc.Id, func(t *testing.T) {
+				receivedData := dialConnectionAndCheckReceivedData(t, serverAddress, tc.testCase)
+
+				if receivedData != tc.ExpectedResult {
+					t.Errorf("expected to receive %s, got %s", tc.ExpectedResult, receivedData)
+				}
+
+				key := strings.Split(tc.Command, " ")[1]
+
+				if tc.ExpectedKeyVal != "" {
+					assertKeyContent(t, stubStore, key, tc.ExpectedKeyVal)
+				}
+
+			})
+		}
+	})
+	t.Run("PREPEND command tests", func(t *testing.T) {
+		prependCmdTestCases := []appendPrependTestCase{
+			{
+				testCase: testCase{
+					Id:             "prepend data to unknown key content, return not stored",
+					Command:        "prepend test99 0 1 4\r\n9876\r\n",
+					ExpectedResult: "NOT_STORED\r\n",
+				},
+				ExpectedKeyVal: "",
+			},
+			{
+				testCase: testCase{
+					Id:             "prepend data to existing key content, return stored",
+					Command:        "prepend test4 0 1 4\r\nmore\r\n",
+					ExpectedResult: "STORED\r\n",
+				},
+				ExpectedKeyVal: "more09182736",
+			},
+			{
+				testCase: testCase{
+					Id:             "prepend data to existing key content noreply, return nothing",
+					Command:        "prepend test4 0 1 4 noreply\r\nmore\r\n",
+					ExpectedResult: "",
+				},
+				ExpectedKeyVal: "moremore09182736",
+			},
+		}
+
+		for _, tc := range prependCmdTestCases {
+			t.Run(tc.Id, func(t *testing.T) {
+				receivedData := dialConnectionAndCheckReceivedData(t, serverAddress, tc.testCase)
+
+				if receivedData != tc.ExpectedResult {
+					t.Errorf("expected to receive %s, got %s", tc.ExpectedResult, receivedData)
+				}
+
+				key := strings.Split(tc.Command, " ")[1]
+
+				if tc.ExpectedKeyVal != "" {
+					assertKeyContent(t, stubStore, key, tc.ExpectedKeyVal)
+				}
+
 			})
 		}
 	})
