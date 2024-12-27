@@ -1,11 +1,11 @@
-package memcached_test
+package app_test
 
 import (
 	"bufio"
 	"errors"
 	"fmt"
-	memcached "memcached"
-	store "memcached/internal"
+	app "memcached/internal/app"
+	store "memcached/internal/store"
 	"net"
 	"strings"
 	"testing"
@@ -89,7 +89,7 @@ func TestServer(t *testing.T) {
 	stubStore := store.NewInMemoryStore()
 	stubStore.Add("test1", []byte("1234"), 0, 100) // key which should be valid at test time
 	stubStore.Add("test2", []byte("9876"), 0, -1)  // key already expired
-	server, _ := memcached.NewMemcachedServer(testServerAddress, testServerPort, stubStore)
+	server, _ := app.NewMemcachedServer(testServerAddress, testServerPort, stubStore)
 	serverAddress := fmt.Sprintf("%s:%d", testServerAddress, testServerPort)
 
 	go server.Start()

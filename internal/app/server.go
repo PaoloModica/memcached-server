@@ -1,11 +1,11 @@
-package memcached
+package app
 
 import (
 	"bufio"
 	"fmt"
 	"io"
 	"log"
-	store "memcached/internal"
+	store "memcached/internal/store"
 	"net"
 	"strconv"
 	"strings"

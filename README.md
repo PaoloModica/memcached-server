@@ -4,16 +4,21 @@
 
 A custom memcached server written in Go.
 
-### Build
+## Build
 
-Build the service:
+You can build the service either directly, leveraging on `go build`, or with Docker:
 ```bash
 $ go build -o ccmemcached cmd/main.go
 ```
 
-### Run
+```bash
+$ docker build --no-cache=true -t ccmemcached .
+```
 
-The server runs on `127.0.0.1:11211` by default:
+## Run
+
+You can run the server directly or leveaging on Docker.
+By default, the server runs on `127.0.0.1:11211`:
 
 ```bash
 $ ./ccmemcached
@@ -23,6 +28,11 @@ You can specify a different address and port to use for running the server:
 
 ```bash
 $ ./ccmemcached -a 192.168.0.1 -p 11212
+```
+
+And with Docker
+```bash
+$ docker run -p 11211:11211 ccmemcached
 ```
 
 To test its functioning, you can leverage on `telnet`:

@@ -3,8 +3,8 @@ package main
 import (
 	"flag"
 	"log"
-	memcached "memcached"
-	store "memcached/internal"
+	app "memcached/internal/app"
+	store "memcached/internal/store"
 )
 
 func main() {
@@ -12,13 +12,13 @@ func main() {
 	var address string
 	var port int
 
-	flag.StringVar(&address, "a", "127.0.0.1", "server address")
+	flag.StringVar(&address, "a", "0.0.0.0", "server address")
 	flag.IntVar(&port, "p", 11211, "server port")
 	flag.Parse()
 
 	store := store.NewInMemoryStore()
 
-	server, err := memcached.NewMemcachedServer(address, port, store)
+	server, err := app.NewMemcachedServer(address, port, store)
 
 	if err != nil {
 		log.Fatalf("an error occurred while setting up memcached server: %s", err)

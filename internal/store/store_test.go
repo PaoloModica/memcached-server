@@ -1,7 +1,7 @@
 package store_test
 
 import (
-	store "memcached/internal"
+	store "memcached/internal/store"
 	"testing"
 )
 

@@ -13,7 +13,9 @@ type MapEntry struct {
 }
 
 func (m *MapEntry) IsExpired() bool {
-	if time.Since(m.InsertDt) > m.Expiration {
+	if m.Expiration == 0 {
+		return false
+	} else if time.Since(m.InsertDt) > m.Expiration {
 		return true
 	} else {
 		return false
